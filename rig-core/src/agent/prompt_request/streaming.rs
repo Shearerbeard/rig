@@ -277,6 +277,12 @@ where
                             did_call_tool = false;
                         },
                         Ok(StreamedAssistantContent::ToolCall(tool_call)) => {
+                            // FIX: Yield the tool call event before executing
+                            // This allows stream consumers to observe tool calls in real-time
+                            yield Ok(MultiTurnStreamItem::stream_item(
+                                StreamedAssistantContent::ToolCall(tool_call.clone())
+                            ));
+
                             let tool_span = info_span!(
                                 parent: tracing::Span::current(),
                                 "execute_tool",

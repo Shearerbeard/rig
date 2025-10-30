@@ -410,6 +410,10 @@ where
                     .map_err(|x| std::io::Error::other(x.to_string()))?;
                 println!("\nResult: {res}");
             }
+            Ok(StreamedAssistantContent::ToolResult(tool_result)) => {
+                println!("\n[Tool Result - {}]", tool_result.tool_call_id);
+                println!("{}", tool_result.result);
+            }
             Ok(StreamedAssistantContent::Final(res)) => {
                 let json_res = serde_json::to_string_pretty(&res).unwrap();
                 println!();
@@ -549,6 +553,16 @@ mod tests {
     }
 }
 
+/// Tool execution result to be sent to the client
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct ToolResult {
+    /// The tool call ID this result corresponds to
+    pub tool_call_id: String,
+
+    /// The actual result from the tool execution
+    pub result: String,
+}
+
 /// Describes responses from a streamed provider response which is either text, a tool call or a final usage response.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
@@ -556,6 +570,7 @@ pub enum StreamedAssistantContent<R> {
     Text(Text),
     ToolCall(ToolCall),
     ToolCallDelta { id: String, delta: String },
+    ToolResult(ToolResult),
     Reasoning(Reasoning),
     Final(R),
 }
@@ -599,6 +614,14 @@ where
                 name: name.into(),
                 arguments,
             },
+        })
+    }
+
+    /// Helper constructor for tool results
+    pub fn tool_result(tool_call_id: impl Into<String>, result: impl Into<String>) -> Self {
+        Self::ToolResult(ToolResult {
+            tool_call_id: tool_call_id.into(),
+            result: result.into(),
         })
     }
 

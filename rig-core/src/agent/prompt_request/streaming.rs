@@ -277,6 +277,12 @@ where
                             did_call_tool = false;
                         },
                         Ok(StreamedAssistantContent::ToolCall(tool_call)) => {
+                            // FIX: Yield the tool call event before executing
+                            // This allows stream consumers to observe tool calls in real-time
+                            yield Ok(MultiTurnStreamItem::stream_item(
+                                StreamedAssistantContent::ToolCall(tool_call.clone())
+                            ));
+
                             let tool_span = info_span!(
                                 parent: tracing::Span::current(),
                                 "execute_tool",
@@ -323,15 +329,24 @@ where
                                 let tool_call_msg = AssistantContent::ToolCall(tool_call.clone());
 
                                 tool_calls.push(tool_call_msg);
-                                tool_results.push((tool_call.id, tool_call.call_id, tool_result));
+                                tool_results.push((tool_call.id.clone(), tool_call.call_id.clone(), tool_result.clone()));
 
                                 did_call_tool = true;
-                                Ok(())
+                                Ok((tool_call.id.clone(), tool_result.clone()))
                                 // break;
                             }.instrument(tool_span).await;
 
-                            if let Err(e) = res {
-                                yield Err(e);
+                            match res {
+                                Ok((tool_call_id, tool_result)) => {
+                                    // NEW: Yield the tool result event
+                                    // This allows clients to see actual tool results (not just arguments)
+                                    yield Ok(MultiTurnStreamItem::stream_item(
+                                        StreamedAssistantContent::tool_result(tool_call_id, tool_result)
+                                    ));
+                                }
+                                Err(e) => {
+                                    yield Err(e);
+                                }
                             }
                         },
                         Ok(StreamedAssistantContent::ToolCallDelta { id, delta }) => {
@@ -344,6 +359,11 @@ where
                                 }
                             }
                         }
+                        Ok(StreamedAssistantContent::ToolResult(_tool_result)) => {
+                            // Tool results are already handled and yielded in the ToolCall handler above
+                            // This arm exists to satisfy exhaustive pattern matching
+                            // We don't need to do anything here as the result was already processed
+                        },
                         Ok(StreamedAssistantContent::Reasoning(rig::message::Reasoning { reasoning, id, signature })) => {
                             chat_history.write().await.push(rig::message::Message::Assistant {
                                 id: None,

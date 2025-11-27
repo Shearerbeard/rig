@@ -220,6 +220,14 @@ where
                     );
                 }
 
+                // Get a snapshot of history BEFORE adding current prompt
+                // (needed for stream_completion which expects prompt separate from history)
+                let history_snapshot = chat_history.read().await.clone();
+
+                // Add current prompt to history BEFORE hook runs
+                // (hook expects prompt to be in history so it can call history.last())
+                chat_history.write().await.push(current_prompt.clone());
+
                 if let Some(ref hook) = self.hook {
                     let reader = chat_history.read().await;
                     let prompt = reader.last().cloned().expect("there should always be at least one message in the chat history");
@@ -251,14 +259,14 @@ where
 
                 let mut stream = tracing::Instrument::instrument(
                     agent
-                    .stream_completion(current_prompt.clone(), (*chat_history.read().await).clone())
+                    .stream_completion(current_prompt.clone(), history_snapshot)
                     .await?
                     .stream(), chat_stream_span
                 )
 
                 .await?;
 
-                chat_history.write().await.push(current_prompt.clone());
+                // Note: current_prompt was already added to chat_history before hook ran
 
                 let mut tool_calls = vec![];
                 let mut tool_results = vec![];
